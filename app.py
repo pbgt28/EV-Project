@@ -266,10 +266,10 @@ if st.button("🚗 Predict Resale Value", use_container_width=True):
     )
 
 company = encode_input("Company", company)
-    model_name = encode_input("Model", model_name)
-    region = encode_input("Region", region)
-    vehicle_type = encode_input("Vehicle_Type", vehicle_type)
-    usage_type = encode_input("Usage_Type", usage_type)
+model_name = encode_input("Model", model_name)
+region = encode_input("Region", region)
+vehicle_type = encode_input("Vehicle_Type", vehicle_type)
+usage_type = encode_input("Usage_Type", usage_type)
 
 input_df = pd.DataFrame([{
         "Company": company,
