@@ -298,12 +298,12 @@ input_df = pd.DataFrame([{
     }])
 
 # Handle column name mismatch: rename 'Mileage_km' to 'Total_Distance_Covered_km'
-    if 'Mileage_km' in input_df.columns and 'Total_Distance_Covered_km' in feature_columns:
-        input_df = input_df.rename(columns={'Mileage_km': 'Total_Distance_Covered_km'})
+if 'Mileage_km' in input_df.columns and 'Total_Distance_Covered_km' in feature_columns:
+    input_df = input_df.rename(columns={'Mileage_km': 'Total_Distance_Covered_km'})
 
     # Add 'Vehicle_ID' with a default value if it's a required feature and missing
-    if 'Vehicle_ID' in feature_columns and 'Vehicle_ID' not in input_df.columns:
-        input_df['Vehicle_ID'] = 0  # Assigning a default value, e.g., 0 or a unique identifier
+if 'Vehicle_ID' in feature_columns and 'Vehicle_ID' not in input_df.columns:
+    input_df['Vehicle_ID'] = 0  # Assigning a default value, e.g., 0 or a unique identifier
 
     # Filter for feature columns, now that 'input_df' should contain all required columns
     input_df = input_df[feature_columns]
