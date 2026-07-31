@@ -312,9 +312,6 @@ scaled_data = scaler.transform(input_df)
 
 prediction = model.predict(scaled_data)[0]
 
-st.success("Prediction Completed!")
+st.success ("Prediction Completed!")
 
-    st.metric(
-        label="Estimated EV Resale Value",
-        value=f"${prediction:,.2f}"
-    )
+st.metric (label="Estimated EV Resale Value", value=f"${prediction:,.2f}")
