@@ -1,579 +1,148 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import joblib
 
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-
-
-# ---------------------------------------------------
-# PAGE CONFIGURATION
-# ---------------------------------------------------
-
+# ----------------------------------------------------------------------
+# Page config
+# ----------------------------------------------------------------------
 st.set_page_config(
     page_title="EV Resale Value Predictor",
-    page_icon="🚗",
-    layout="wide"
+    page_icon="🔋",
+    layout="centered",
 )
 
-
-# ---------------------------------------------------
-# TITLE
-# ---------------------------------------------------
-
-st.title("🚗 Electric Vehicle Resale Value Predictor")
-st.write(
-    "Predict the resale value of an electric vehicle using "
-    "Machine Learning models."
-)
-
-st.divider()
-
-
-# ---------------------------------------------------
-# LOAD DATA
-# ---------------------------------------------------
-
-@st.cache_data
-def load_data():
-
-    df = pd.read_csv("electric_vehicle_analytics(10).csv")
-
-    # Rename columns as done in the notebook
-    df = df.rename(
-        columns={
-            "Mileage_km": "Total_Distance_Covered_km",
-            "Make": "Company"
-        }
-    )
-
-    return df
-
-
-df = load_data()
-
-
-# ---------------------------------------------------
-# DATA PREPROCESSING
-# ---------------------------------------------------
-
+# ----------------------------------------------------------------------
+# Load model artifacts (cached so they only load once per session)
+# ----------------------------------------------------------------------
 @st.cache_resource
-def train_models(df):
+def load_artifacts():
+    model = joblib.load("model.pkl")
+    scaler = joblib.load("scaler.pkl")
+    encoders = joblib.load("encoders.pkl")              # dict: {column_name: fitted LabelEncoder}
+    feature_columns = joblib.load("feature_columns.pkl")  # list of column names, in training order
+    return model, scaler, encoders, feature_columns
 
-    data = df.copy()
+model, scaler, encoders, feature_columns = load_artifacts()
 
-    # Drop Vehicle ID
-    if "Vehicle_ID" in data.columns:
-        data = data.drop("Vehicle_ID", axis=1)
+# Columns that were label-encoded during training
+CATEGORICAL_COLS = ["Company", "Model", "Region", "Vehicle_Type", "Usage_Type"]
 
-    # Categorical columns
-    categorical_cols = [
-        "Company",
-        "Model",
-        "Region",
-        "Vehicle_Type",
-        "Usage_Type"
-    ]
-
-    # Store encoders
-    encoders = {}
-
-    # Label Encoding
-    for col in categorical_cols:
-
-        le = LabelEncoder()
-
-        data[col] = le.fit_transform(
-            data[col].astype(str)
-        )
-
-        encoders[col] = le
-
-    # Features and target
-    X = data.drop("Resale_Value_USD", axis=1)
-    y = data["Resale_Value_USD"]
-
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42
-    )
-
-    # Standard Scaling
-    scaler = StandardScaler()
-
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    # ------------------------------------------------
-    # Linear Regression
-    # ------------------------------------------------
-
-    lr = LinearRegression()
-
-    lr.fit(
-        X_train_scaled,
-        y_train
-    )
-
-    lr_pred = lr.predict(X_test_scaled)
-
-    # ------------------------------------------------
-    # Decision Tree
-    # ------------------------------------------------
-
-    dt = DecisionTreeRegressor(
-        max_depth=5,
-        min_samples_split=10,
-        min_samples_leaf=5,
-        random_state=42
-    )
-
-    dt.fit(
-        X_train_scaled,
-        y_train
-    )
-
-    dt_pred = dt.predict(X_test_scaled)
-
-    # ------------------------------------------------
-    # Random Forest
-    # ------------------------------------------------
-
-    rf = RandomForestRegressor(
-        n_estimators=200,
-        max_depth=10,
-        min_samples_split=10,
-        min_samples_leaf=4,
-        random_state=42
-    )
-
-    rf.fit(
-        X_train_scaled,
-        y_train
-    )
-
-    rf_pred = rf.predict(X_test_scaled)
-
-    # ------------------------------------------------
-    # Model Metrics
-    # ------------------------------------------------
-
-    metrics = pd.DataFrame({
-        "Model": [
-            "Linear Regression",
-            "Decision Tree",
-            "Random Forest"
-        ],
-
-        "R²": [
-            r2_score(y_test, lr_pred),
-            r2_score(y_test, dt_pred),
-            r2_score(y_test, rf_pred)
-        ],
-
-        "MAE": [
-            mean_absolute_error(y_test, lr_pred),
-            mean_absolute_error(y_test, dt_pred),
-            mean_absolute_error(y_test, rf_pred)
-        ],
-
-        "RMSE": [
-            np.sqrt(mean_squared_error(y_test, lr_pred)),
-            np.sqrt(mean_squared_error(y_test, dt_pred)),
-            np.sqrt(mean_squared_error(y_test, rf_pred))
-        ]
-    })
-
-    return (
-        X,
-        y,
-        X_test,
-        y_test,
-        encoders,
-        scaler,
-        lr,
-        dt,
-        rf,
-        metrics
-    )
-
-
-(
-    X,
-    y,
-    X_test,
-    y_test,
-    encoders,
-    scaler,
-    lr,
-    dt,
-    rf,
-    metrics
-) = train_models(df)
-
-
-# ---------------------------------------------------
-# SIDEBAR
-# ---------------------------------------------------
-
-st.sidebar.header("Navigation")
-
-page = st.sidebar.radio(
-    "Select Section",
-    [
-        "Prediction",
-        "Dataset",
-        "Model Performance",
-        "Feature Importance"
-    ]
+st.title("🔋 EV Resale Value Predictor")
+st.write(
+    "Enter a vehicle's specs below to estimate its resale value (USD), "
+    "based on a model trained on EV analytics data."
 )
 
-
-# ===================================================
-# PREDICTION PAGE
-# ===================================================
-
-if page == "Prediction":
-
-    st.header("🔮 Predict EV Resale Value")
-
-    st.write(
-        "Enter the vehicle specifications below."
-    )
-
+# ----------------------------------------------------------------------
+# Input form
+# ----------------------------------------------------------------------
+with st.form("prediction_form"):
+    st.subheader("Vehicle Identity")
     col1, col2 = st.columns(2)
-
-    # ------------------------------------------------
-    # CATEGORICAL INPUTS
-    # ------------------------------------------------
-
     with col1:
-
-        company = st.selectbox(
-            "Company",
-            sorted(df["Company"].astype(str).unique())
-        )
-
-        model = st.selectbox(
-            "Model",
-            sorted(df["Model"].astype(str).unique())
-        )
-
-        region = st.selectbox(
-            "Region",
-            sorted(df["Region"].astype(str).unique())
-        )
-
-        vehicle_type = st.selectbox(
-            "Vehicle Type",
-            sorted(df["Vehicle_Type"].astype(str).unique())
-        )
-
-        usage_type = st.selectbox(
-            "Usage Type",
-            sorted(df["Usage_Type"].astype(str).unique())
-        )
-
-    # ------------------------------------------------
-    # NUMERICAL INPUTS
-    # ------------------------------------------------
-
+        vehicle_id = st.number_input("Vehicle ID", min_value=1, value=1, step=1)
+        company = st.selectbox("Company (Make)", options=list(encoders["Company"].classes_))
+        region = st.selectbox("Region", options=list(encoders["Region"].classes_))
     with col2:
+        model_name = st.selectbox("Model", options=list(encoders["Model"].classes_))
+        vehicle_type = st.selectbox("Vehicle Type", options=list(encoders["Vehicle_Type"].classes_))
+        usage_type = st.selectbox("Usage Type", options=list(encoders["Usage_Type"].classes_))
 
-        battery_capacity = st.number_input(
-            "Battery Capacity (kWh)",
-            min_value=float(df["Battery_Capacity_kWh"].min()),
-            max_value=float(df["Battery_Capacity_kWh"].max()),
-            value=float(df["Battery_Capacity_kWh"].median())
+    year = st.slider("Year", min_value=2015, max_value=2026, value=2021, step=1)
+
+    st.subheader("Battery & Charging")
+    col3, col4 = st.columns(2)
+    with col3:
+        battery_capacity = st.number_input("Battery Capacity (kWh)", min_value=20.0, max_value=150.0, value=75.0)
+        battery_health = st.slider("Battery Health (%)", min_value=50.0, max_value=100.0, value=90.0)
+        charging_power = st.number_input("Charging Power (kW)", min_value=5.0, max_value=350.0, value=130.0)
+    with col4:
+        charging_time = st.number_input("Charging Time (hr)", min_value=0.1, max_value=24.0, value=1.2)
+        charge_cycles = st.number_input("Charge Cycles", min_value=0, max_value=3000, value=1100, step=10)
+        energy_consumption = st.number_input("Energy Consumption (kWh/100km)", min_value=5.0, max_value=40.0, value=18.5)
+
+    st.subheader("Performance & Usage")
+    col5, col6 = st.columns(2)
+    with col5:
+        range_km = st.number_input("Range (km)", min_value=50, max_value=800, value=375)
+        total_distance = st.number_input("Total Distance Covered (km)", min_value=0, max_value=400000, value=125000, step=1000)
+        avg_speed = st.number_input("Avg Speed (km/h)", min_value=10.0, max_value=150.0, value=65.0)
+        max_speed = st.number_input("Max Speed (km/h)", min_value=80, max_value=300, value=190)
+    with col6:
+        acceleration = st.number_input("0–100 km/h Acceleration (sec)", min_value=1.0, max_value=15.0, value=6.7)
+        temperature = st.number_input("Operating Temperature (°C)", min_value=-20.0, max_value=50.0, value=15.0)
+        co2_saved = st.number_input("CO2 Saved (tons)", min_value=0.0, max_value=50.0, value=15.0)
+
+    st.subheader("Costs")
+    col7, col8 = st.columns(2)
+    with col7:
+        maintenance_cost = st.number_input("Maintenance Cost (USD)", min_value=0, max_value=5000, value=1100, step=10)
+        insurance_cost = st.number_input("Insurance Cost (USD)", min_value=0, max_value=5000, value=1500, step=10)
+    with col8:
+        electricity_cost = st.number_input("Electricity Cost (USD/kWh)", min_value=0.01, max_value=1.0, value=0.22)
+        monthly_charging_cost = st.number_input("Monthly Charging Cost (USD)", min_value=0.0, max_value=3000.0, value=420.0)
+
+    submitted = st.form_submit_button("Predict Resale Value")
+
+# ----------------------------------------------------------------------
+# Prediction
+# ----------------------------------------------------------------------
+if submitted:
+    raw_input = {
+        "Vehicle_ID": vehicle_id,
+        "Company": company,
+        "Model": model_name,
+        "Year": year,
+        "Region": region,
+        "Vehicle_Type": vehicle_type,
+        "Battery_Capacity_kWh": battery_capacity,
+        "Battery_Health_%": battery_health,
+        "Range_km": range_km,
+        "Charging_Power_kW": charging_power,
+        "Charging_Time_hr": charging_time,
+        "Charge_Cycles": charge_cycles,
+        "Energy_Consumption_kWh_per_100km": energy_consumption,
+        "Total_Distance_Covered_km": total_distance,
+        "Avg_Speed_kmh": avg_speed,
+        "Max_Speed_kmh": max_speed,
+        "Acceleration_0_100_kmh_sec": acceleration,
+        "Temperature_C": temperature,
+        "Usage_Type": usage_type,
+        "CO2_Saved_tons": co2_saved,
+        "Maintenance_Cost_USD": maintenance_cost,
+        "Insurance_Cost_USD": insurance_cost,
+        "Electricity_Cost_USD_per_kWh": electricity_cost,
+        "Monthly_Charging_Cost_USD": monthly_charging_cost,
+    }
+
+    input_df = pd.DataFrame([raw_input])
+
+    try:
+        # Apply the same label encoders used during training
+        for col in CATEGORICAL_COLS:
+            le = encoders[col]
+            input_df[col] = le.transform(input_df[col])
+
+        # Enforce the exact column order used during training
+        input_df = input_df[feature_columns]
+
+        # Scale, then predict
+        input_scaled = scaler.transform(input_df)
+        prediction = model.predict(input_scaled)[0]
+
+        st.success(f"### Estimated Resale Value: ${prediction:,.2f}")
+
+    except KeyError as e:
+        st.error(
+            f"Column mismatch between the form and the trained model's expected "
+            f"features: {e}. Check that feature_columns.pkl matches these inputs."
         )
-
-        range_km = st.number_input(
-            "Driving Range (km)",
-            min_value=float(df["Range_km"].min()),
-            max_value=float(df["Range_km"].max()),
-            value=float(df["Range_km"].median())
+    except ValueError as e:
+        st.error(
+            f"One of the selected categorical values wasn't seen during training: {e}"
         )
-
-        battery_health = st.number_input(
-            "Battery Health (%)",
-            min_value=float(df["Battery_Health_%"].min()),
-            max_value=float(df["Battery_Health_%"].max()),
-            value=float(df["Battery_Health_%"].median())
-        )
-
-        charging_power = st.number_input(
-            "Charging Power (kW)",
-            min_value=float(df["Charging_Power_kW"].min()),
-            max_value=float(df["Charging_Power_kW"].max()),
-            value=float(df["Charging_Power_kW"].median())
-        )
-
-        charging_time = st.number_input(
-            "Charging Time (hr)",
-            min_value=float(df["Charging_Time_hr"].min()),
-            max_value=float(df["Charging_Time_hr"].max()),
-            value=float(df["Charging_Time_hr"].median())
-        )
-
-        total_distance = st.number_input(
-            "Total Distance Covered (km)",
-            min_value=float(df["Total_Distance_Covered_km"].min()),
-            max_value=float(df["Total_Distance_Covered_km"].max()),
-            value=float(df["Total_Distance_Covered_km"].median())
-        )
-
-
-    # ------------------------------------------------
-    # PREDICT BUTTON
-    # ------------------------------------------------
-
-    if st.button(
-        "🚀 Predict Resale Value",
-        use_container_width=True
-    ):
-
-        # Encode categorical values
-
-        company_encoded = encoders["Company"].transform(
-            [company]
-        )[0]
-
-        model_encoded = encoders["Model"].transform(
-            [model]
-        )[0]
-
-        region_encoded = encoders["Region"].transform(
-            [region]
-        )[0]
-
-        vehicle_type_encoded = encoders["Vehicle_Type"].transform(
-            [vehicle_type]
-        )[0]
-
-        usage_type_encoded = encoders["Usage_Type"].transform(
-            [usage_type]
-        )[0]
-
-
-        # Create input dataframe
-        input_data = pd.DataFrame({
-
-            "Company": [company_encoded],
-
-            "Model": [model_encoded],
-
-            "Region": [region_encoded],
-
-            "Vehicle_Type": [vehicle_type_encoded],
-
-            "Usage_Type": [usage_type_encoded],
-
-            "Battery_Capacity_kWh": [
-                battery_capacity
-            ],
-
-            "Range_km": [
-                range_km
-            ],
-
-            "Battery_Health_%": [
-                battery_health
-            ],
-
-            "Charging_Power_kW": [
-                charging_power
-            ],
-
-            "Charging_Time_hr": [
-                charging_time
-            ],
-
-            "Total_Distance_Covered_km": [
-                total_distance
-            ]
-        })
-
-
-        # Make sure feature order is identical
-        input_data = input_data[X.columns]
-
-
-        # Scale input
-        input_scaled = scaler.transform(
-            input_data
-        )
-
-
-        # Predictions
-        prediction_lr = lr.predict(
-            input_scaled
-        )[0]
-
-        prediction_dt = dt.predict(
-            input_scaled
-        )[0]
-
-        prediction_rf = rf.predict(
-            input_scaled
-        )[0]
-
-
-        # ------------------------------------------------
-        # DISPLAY RESULTS
-        # ------------------------------------------------
-
-        st.success("Prediction completed successfully!")
-
-        st.subheader("💰 Estimated Resale Value")
-
-        result_col1, result_col2, result_col3 = st.columns(3)
-
-        with result_col1:
-
-            st.metric(
-                "Linear Regression",
-                f"${prediction_lr:,.2f}"
-            )
-
-        with result_col2:
-
-            st.metric(
-                "Decision Tree",
-                f"${prediction_dt:,.2f}"
-            )
-
-        with result_col3:
-
-            st.metric(
-                "Random Forest",
-                f"${prediction_rf:,.2f}"
-            )
-
-
-        st.divider()
-
-        # Random Forest is generally the preferred model
-        st.subheader("⭐ Recommended Prediction")
-
-        st.success(
-            f"Estimated EV Resale Value: "
-            f"${prediction_rf:,.2f}"
-        )
-
-
-# ===================================================
-# DATASET PAGE
-# ===================================================
-
-elif page == "Dataset":
-
-    st.header("📊 EV Dataset")
-
-    st.write(
-        f"Dataset contains **{df.shape[0]} rows** "
-        f"and **{df.shape[1]} columns**."
-    )
-
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
-
-    st.subheader("Dataset Statistics")
-
-    st.dataframe(
-        df.describe(),
-        use_container_width=True
-    )
-
-
-# ===================================================
-# MODEL PERFORMANCE
-# ===================================================
-
-elif page == "Model Performance":
-
-    st.header("📈 Model Performance")
-
-    st.write(
-        "Comparison of the three machine learning models "
-        "on the test dataset."
-    )
-
-    display_metrics = metrics.copy()
-
-    display_metrics["R²"] = display_metrics["R²"].round(3)
-    display_metrics["MAE"] = display_metrics["MAE"].round(2)
-    display_metrics["RMSE"] = display_metrics["RMSE"].round(2)
-
-    st.dataframe(
-        display_metrics,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.subheader("R² Score Comparison")
-
-    chart_data = metrics.set_index("Model")["R²"]
-
-    st.bar_chart(chart_data)
-
-    st.subheader("RMSE Comparison")
-
-    rmse_data = metrics.set_index("Model")["RMSE"]
-
-    st.bar_chart(rmse_data)
-
-
-# ===================================================
-# FEATURE IMPORTANCE
-# ===================================================
-
-elif page == "Feature Importance":
-
-    st.header("🌟 Random Forest Feature Importance")
-
-    importance = pd.DataFrame({
-
-        "Feature": X.columns,
-
-        "Importance": rf.feature_importances_
-
-    })
-
-    importance = importance.sort_values(
-        "Importance",
-        ascending=False
-    )
-
-    st.dataframe(
-        importance,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.subheader("Feature Importance Chart")
-
-    chart_data = importance.set_index(
-        "Feature"
-    )["Importance"]
-
-    st.bar_chart(chart_data)
-
-
-# ---------------------------------------------------
-# FOOTER
-# ---------------------------------------------------
-
-st.divider()
 
 st.caption(
-    "Electric Vehicle Analytics | Machine Learning Project"
+    "Model predictions are estimates based on historical data and may not reflect "
+    "actual market resale value."
 )
